@@ -7,7 +7,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import torch.nn as nn
 torch.hub.set_dir("/workingdir/.cache")
-from utils import Dataset
+from utils import Dataset, Classifier
 from tqdm.auto import tqdm
 from math import cos
 
@@ -18,12 +18,15 @@ def main():
     model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-german-cased")
     model.pre_classifier = nn.Identity()
     model.classifier = nn.Identity()
-    classifier = nn.Linear(768,3)
+    classifier = Classifier([768, 768//2, 3]) #nn.Linear(768,3)
+    print(classifier)
     optimizer = torch.optim.Adam(classifier.parameters(), lr=1e-3)
 
     D = Dataset(model, tokenizer, "supernet")
+    D_test = Dataset(model, tokenizer, "supernet", train=False)
     batch_size = 16
     dataloader = torch.utils.data.DataLoader(D, batch_size=batch_size, shuffle=True)
+    dataloader_test = torch.utils.data.DataLoader(D_test, batch_size=batch_size, shuffle=True)
     criterion = nn.CrossEntropyLoss(reduction="sum")
 
     n_epochs = 1_000
@@ -45,8 +48,21 @@ def main():
             
             loss.backward()
             optimizer.step()
+        l_train = l/n
+        a_train = a/n
+
         if epoch % 10 == 0:
-            bar.set_description(f"[{epoch+1}/{n_epochs}] Loss: {l/n:.2f}, Acc: {a/n*100:.2f}%, lr: {lr:.2e}")
+            l, n, a = 0, 0, 0
+            for batch, label in dataloader_test:
+                output = classifier(batch)
+                loss = criterion(output, label.long())
+                acc = (output.argmax(1) == label).float().sum()
+                a += acc.item()
+                l += loss.item()
+                n += len(label)
+            l_test = l/n
+            a_test = a/n
+            bar.set_description(f"[{epoch+1}/{n_epochs}] L_train: {l_train:.2e}, L_test: {l_test:.2e}, Acc_train: {a_train*100:.2f}%, Acc_test: {a_test*100:.2f}%, lr: {lr:.2e}")
 
     eingabe = ""
     labeldict = {0: "good words", 1: "bad words", 2: "neutral words"}

@@ -5,6 +5,7 @@ import torch
 import json
 import nltk
 import torch.nn as nn
+from random import shuffle
 
 
 class Classifier(nn.Module):
@@ -45,7 +46,7 @@ def bagofwords(s, words):
     return torch.tensor(bag).float() 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, model, tokenizer, name="melinda"):
+    def __init__(self, model, tokenizer, name="melinda", train=True, split=0.8):
         super().__init__()
         with open("data/{}.json".format(name), "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -54,8 +55,14 @@ class Dataset(torch.utils.data.Dataset):
         self.data = []
         self.label = []
         for d in data["intents"]:
-            self.data.extend(d["patterns"])
-            self.label.append(torch.ones(len(d["patterns"])) * labeldict[d["tag"]])
+            temp = d["patterns"]
+            shuffle(temp)
+            if train:
+                self.data.extend(temp[:int(split*len(temp))])
+                self.label.append(torch.ones(len(d["patterns"]))[:int(split*len(temp))] * labeldict[d["tag"]])
+            else: 
+                self.data.extend(temp[int(split*len(temp)):])
+                self.label.append(torch.ones(len(d["patterns"]))[int(split*len(temp)):] * labeldict[d["tag"]])
         self.label = torch.cat(self.label)
         print(f"Good: {sum(self.label == 1)}, Bad: {sum(self.label == 0)}, Neutral: {sum(self.label == 2)}")
 
